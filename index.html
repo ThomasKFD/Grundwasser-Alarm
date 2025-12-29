@@ -418,7 +418,31 @@ if ("serviceWorker" in navigator) {
 }
 </script>
 
+<script>
+async function requestNotificationPermission() {
+  if (!("Notification" in window)) {
+    alert("Dieser Browser unterstützt keine Benachrichtigungen.");
+    return;
+  }
+
+  const permission = await Notification.requestPermission();
+
+  if (permission === "granted") {
+    console.log("Push-Benachrichtigungen erlaubt");
+  } else {
+    alert("Push-Benachrichtigungen wurden abgelehnt.");
+  }
+}
+
+// Beim ersten Laden anfragen
+window.addEventListener("load", () => {
+  requestNotificationPermission();
+});
+</script>
+  
+
 </body>
 </html>
+
 
 
