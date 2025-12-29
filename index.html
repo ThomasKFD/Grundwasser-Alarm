@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#b00000">
-  
-<title>Grundwasserstand - Alarmmonitor</title>
+
+<title>Grundwasserstand – Alarmmonitor</title>
 
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 
@@ -102,62 +102,34 @@ input[type=range].vertical {
   background: transparent;
 }
 
-
-
-<button onclick="sendTestNotification()">
-  🔔 Test Push
-</button>
-
-<script>
-function sendTestNotification() {
-  if (navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: "TEST_NOTIFICATION"
-    });
-  } else {
-    alert("Service Worker noch nicht aktiv.");
-  }
-}
-</script>
-
-  
-/* ===== Slider SCHIENE ===== */
+/* Slider Track */
 .slider-ok input::-moz-range-track {
   height: 8px;
   background: #b7e1c1;
   border-radius: 4px;
 }
-
 .slider-alarm input::-moz-range-track {
   height: 8px;
   background: #f3b3b3;
   border-radius: 4px;
 }
 
-/* ===== Slider THUMB ===== */
+/* Slider Thumb */
 .slider-ok input::-moz-range-thumb {
   width: 26px;
   height: 26px;
   background: #1e7f3f;
   border: 2px solid #155c2d;
   border-radius: 50%;
-  cursor: grab;
 }
-
 .slider-alarm input::-moz-range-thumb {
   width: 26px;
   height: 26px;
   background: red;
   border: 2px solid darkred;
   border-radius: 50%;
-  cursor: grab;
   animation: alarmPulse 1.6s infinite;
 }
-
-input[type=range]:active::-moz-range-thumb {
-  cursor: grabbing;
-}
-
 @keyframes alarmPulse {
   0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.6); }
   70% { box-shadow: 0 0 0 10px rgba(255,0,0,0); }
@@ -197,33 +169,36 @@ input[type=range]:active::-moz-range-thumb {
 </div>
 
 <div id="alarmStatus" class="status ok">
-  Status: OK - alles im gruenen Bereich
+  Status: OK
 </div>
 
 <div class="layout">
   <div id="chart"></div>
 
-  <div class="slider-container slider-ok">
+  <div class="slider-container slider-ok" id="sliderContainer">
     <input type="range" id="thresholdSlider" class="vertical" step="0.01">
     <div class="slider-value">
-      <span id="sliderValue">-</span> m
+      <span id="sliderValue">–</span> m
     </div>
   </div>
 </div>
 
-<audio id="alarmSound" loop>
+<audio id="alarmSound">
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
 </audio>
 
 <script>
 let chart;
 let thresholdY = -1.20;
-let lastValue = null;
-let alarmState = "OK";
+let lastMeasuredValue = null;
+
+let alarmState = "OK"; // OK | ALARM
+let alarmSource = null; // MEASUREMENT | SLIDER
 
 let minY, maxY, paddedMinY;
 let fullMinX, fullMaxX;
 
+const ALARM_HYSTERESIS = 0.05;
 const alarmSound = document.getElementById("alarmSound");
 let soundEnabled = true;
 
@@ -232,6 +207,7 @@ fileInput.onchange = e => {
   const file = e.target.files[0];
   if (!file) return;
   uploadText.textContent = file.name;
+
   const r = new FileReader();
   r.onload = () => parseTxt(r.result);
   r.readAsText(file);
@@ -258,12 +234,11 @@ function parseTxt(text) {
   maxY = Math.max(...data.map(d=>d[1]));
   paddedMinY = minY - (maxY-minY)*0.1;
 
-  lastValue = data[data.length-1][1];
+  lastMeasuredValue = data[data.length-1][1];
 
   setupSlider();
   renderChart(data);
-  updateSliderColor();
-  checkAlarm();
+  checkAlarm(lastMeasuredValue, "MEASUREMENT");
 }
 
 /* Slider */
@@ -276,9 +251,9 @@ function setupSlider() {
   thresholdSlider.oninput = () => {
     thresholdY = parseFloat(thresholdSlider.value);
     updateSliderLabel();
-    refreshChartVisuals();
+    refreshChart();
     updateSliderColor();
-    checkAlarm();
+    checkAlarm(lastMeasuredValue, "SLIDER");
   };
 }
 
@@ -287,40 +262,50 @@ function updateSliderLabel() {
 }
 
 function updateSliderColor() {
-  const c = document.querySelector(".slider-container");
-  c.classList.toggle("slider-alarm", thresholdY <= lastValue);
-  c.classList.toggle("slider-ok", thresholdY > lastValue);
+  const c = document.getElementById("sliderContainer");
+  const alarm = lastMeasuredValue >= thresholdY;
+  c.classList.toggle("slider-alarm", alarm);
+  c.classList.toggle("slider-ok", !alarm);
 }
 
 /* Alarm */
-function checkAlarm() {
-  if (lastValue === null) return;
+function checkAlarm(currentValue, source) {
+  if (currentValue === null) return;
 
-  if (alarmState === "OK" && lastValue >= thresholdY) {
+  const isAlarm = currentValue >= thresholdY;
+
+  if (alarmState === "OK" && isAlarm) {
     alarmState = "ALARM";
+    alarmSource = source;
     updateStatus();
-    refreshChartVisuals();
+
     if (soundEnabled) {
       alarmSound.currentTime = 0;
       alarmSound.play().catch(()=>{});
     }
   }
 
-  if (alarmState === "ALARM" && lastValue < thresholdY) {
+  if (
+    alarmState === "ALARM" &&
+    currentValue < (thresholdY - ALARM_HYSTERESIS)
+  ) {
     alarmState = "OK";
+    alarmSource = null;
     alarmSound.pause();
     alarmSound.currentTime = 0;
     updateStatus();
-    refreshChartVisuals();
   }
 }
 
 function updateStatus() {
   if (alarmState === "ALARM") {
-    alarmStatus.textContent = "Status: ALARM - Grenzwert unterschritten";
+    alarmStatus.textContent =
+      alarmSource === "SLIDER"
+        ? "Status: ALARM (Simulation)"
+        : "Status: ALARM (Messwert)";
     alarmStatus.className = "status alarm";
   } else {
-    alarmStatus.textContent = "Status: OK - alles im gruenen Bereich";
+    alarmStatus.textContent = "Status: OK";
     alarmStatus.className = "status ok";
   }
 }
@@ -329,11 +314,8 @@ function updateStatus() {
 function renderChart(data) {
   if (chart) chart.destroy();
 
-  chart = new ApexCharts(document.querySelector("#chart"), {
-    series: [{
-      name:"Grundwasser GOK",
-      data
-    }],
+  chart = new ApexCharts(chartEl, {
+    series: [{ name:"Grundwasser GOK", data }],
     chart: {
       type:"line",
       height:"100%",
@@ -341,11 +323,8 @@ function renderChart(data) {
       pan:{ enabled:true, mode:"x" },
       toolbar:{ show:false }
     },
-    stroke: {
-      width: 2,
-      curve: "straight"
-    },
-    colors: ["#1f77b4"],
+    stroke:{ width:2 },
+    colors:["#1f77b4"],
     xaxis:{ type:"datetime" },
     yaxis:{
       min:paddedMinY,
@@ -361,29 +340,20 @@ function renderChart(data) {
 }
 
 function buildAnnotations() {
-  const isAlarm = lastValue >= thresholdY;
+  const isAlarm = lastMeasuredValue >= thresholdY;
   const color = isAlarm ? "red" : "green";
 
-  return [
-    {
-      y: thresholdY,
-      y2: 0,
-      fillColor: isAlarm
-        ? "rgba(255,0,0,0.18)"
-        : "rgba(0,200,0,0.08)"
-    },
-    {
-      y: thresholdY,
-      borderColor: color,
-      label: {
-        text: "Alarmwert " + Math.abs(thresholdY).toFixed(2) + " m",
-        style: { background: color, color: "#fff" }
-      }
+  return [{
+    y: thresholdY,
+    borderColor: color,
+    label: {
+      text: "Alarmwert " + Math.abs(thresholdY).toFixed(2) + " m",
+      style: { background: color, color: "#fff" }
     }
-  ];
+  }];
 }
 
-function refreshChartVisuals() {
+function refreshChart() {
   chart.updateOptions({
     annotations:{ yaxis: buildAnnotations() }
   }, false, false);
@@ -400,15 +370,15 @@ document.querySelectorAll(".toolbar button").forEach(btn => {
     const end = fullMaxX;
     const r = btn.dataset.range;
 
-    if (r === "1w") start = end - 7*86400000;
-    if (r === "1m") start = end - 30*86400000;
-    if (r === "1y") start = end - 365*86400000;
-    if (r === "ytd") {
-      const d = new Date(end);
-      start = new Date(d.getFullYear(),0,1).getTime();
+    if (r==="1w") start=end-7*864e5;
+    if (r==="1m") start=end-30*864e5;
+    if (r==="1y") start=end-365*864e5;
+    if (r==="ytd") {
+      const d=new Date(end);
+      start=new Date(d.getFullYear(),0,1).getTime();
     }
 
-    chart.zoomX(start, end);
+    chart.zoomX(start,end);
   };
 });
 
@@ -421,48 +391,12 @@ muteToggle.onchange = e => {
   }
 };
 </script>
-  
+
 <script>
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("./service-worker.js")
-      .then(reg => {
-        console.log("Service Worker registriert:", reg.scope);
-      })
-      .catch(err => {
-        console.error("Service Worker Fehler:", err);
-      });
-  });
+  navigator.serviceWorker.register("./service-worker.js");
 }
 </script>
-
-<script>
-async function requestNotificationPermission() {
-  if (!("Notification" in window)) {
-    alert("Dieser Browser unterstützt keine Benachrichtigungen.");
-    return;
-  }
-
-  const permission = await Notification.requestPermission();
-
-  if (permission === "granted") {
-    console.log("Push-Benachrichtigungen erlaubt");
-  } else {
-    alert("Push-Benachrichtigungen wurden abgelehnt.");
-  }
-}
-
-// Beim ersten Laden anfragen
-window.addEventListener("load", () => {
-  requestNotificationPermission();
-});
-</script>
-  
 
 </body>
 </html>
-
-
-
-
