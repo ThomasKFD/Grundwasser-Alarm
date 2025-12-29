@@ -178,23 +178,46 @@ input[type=range].vertical {
 </audio>
 
 <script>
-/* ===== Backend Push ===== */
-function sendAlarmToServer() {
-  fetch("http://localhost:3000/alarm", { method: "POST" })
-    .catch(() => console.warn("Alarm-Server nicht erreichbar"));
+/* ===== BACKEND KOPPLUNG (SCHRITT 3) ===== */
+let alarmAlreadySent = false;
+
+function sendAlarmToServer(type) {
+  if (alarmAlreadySent) return;
+
+  alarmAlreadySent = true;
+
+  fetch("http://localhost:3000/alarm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: type,           // "MEASUREMENT" | "SLIDER"
+      timestamp: Date.now()
+    })
+  }).catch(() => {
+    console.warn("Backend nicht erreichbar");
+  });
 }
 
+function resetAlarmOnServer() {
+  alarmAlreadySent = false;
+
+  fetch("http://localhost:3000/reset", {
+    method: "POST"
+  }).catch(() => {});
+}
+</script>
+
+<script>
 let chart;
-let thresholdY = -1.20;
+let thresholdY = -1.2;
 let lastMeasuredValue = null;
 
-let alarmState = "OK";       // OK | ALARM
-let alarmSource = null;      // MEASUREMENT | SLIDER
+let alarmState = "OK";        // OK | ALARM
+let alarmSource = null;       // MEASUREMENT | SLIDER
 
 let minY, maxY, paddedMinY;
 let fullMinX, fullMaxX;
 
-const ALARM_HYSTERESIS = 0.05;
 const alarmSound = document.getElementById("alarmSound");
 let soundEnabled = true;
 
@@ -242,29 +265,32 @@ function setupSlider() {
   thresholdSlider.min = minY;
   thresholdSlider.max = 0;
   thresholdSlider.value = thresholdY;
-  sliderValue.textContent = Math.abs(thresholdY).toFixed(2);
+  updateSliderLabel();
 
   thresholdSlider.oninput = () => {
     thresholdY = parseFloat(thresholdSlider.value);
-    sliderValue.textContent = Math.abs(thresholdY).toFixed(2);
+    updateSliderLabel();
     refreshChart();
     updateSliderColor();
     checkAlarm(lastMeasuredValue, "SLIDER");
   };
 }
 
+function updateSliderLabel() {
+  sliderValue.textContent = Math.abs(thresholdY).toFixed(2);
+}
+
 function updateSliderColor() {
-  const c = document.getElementById("sliderContainer");
   const alarm = lastMeasuredValue >= thresholdY;
-  c.classList.toggle("slider-alarm", alarm);
-  c.classList.toggle("slider-ok", !alarm);
+  sliderContainer.classList.toggle("slider-alarm", alarm);
+  sliderContainer.classList.toggle("slider-ok", !alarm);
 }
 
 /* Alarm */
-function checkAlarm(currentValue, source) {
-  if (currentValue === null) return;
+function checkAlarm(value, source) {
+  if (value === null) return;
 
-  const isAlarm = currentValue >= thresholdY;
+  const isAlarm = value >= thresholdY;
 
   if (alarmState === "OK" && isAlarm) {
     alarmState = "ALARM";
@@ -276,80 +302,59 @@ function checkAlarm(currentValue, source) {
       alarmSound.play().catch(()=>{});
     }
 
-    // 🔔 PUSH NUR EINMAL
-    sendAlarmToServer();
+    sendAlarmToServer(source);
   }
 
-  if (alarmState === "ALARM" && currentValue < (thresholdY - ALARM_HYSTERESIS)) {
+  if (alarmState === "ALARM" && !isAlarm) {
     alarmState = "OK";
     alarmSource = null;
     alarmSound.pause();
     alarmSound.currentTime = 0;
     updateStatus();
+    resetAlarmOnServer();
   }
 }
 
 function updateStatus() {
-  alarmStatus.textContent =
-    alarmState === "ALARM"
-      ? "Status: ALARM - Grenzwert unterschritten"
-      : "Status: OK";
-  alarmStatus.className = "status " + (alarmState === "ALARM" ? "alarm" : "ok");
+  if (alarmState === "ALARM") {
+    alarmStatus.textContent =
+      alarmSource === "SLIDER"
+        ? "Status: ALARM (Simulation)"
+        : "Status: ALARM (Messwert)";
+    alarmStatus.className = "status alarm";
+  } else {
+    alarmStatus.textContent = "Status: OK";
+    alarmStatus.className = "status ok";
+  }
 }
 
 /* Chart */
 function renderChart(data) {
   if (chart) chart.destroy();
 
-  chart = new ApexCharts(chartEl, {
+  chart = new ApexCharts(document.querySelector("#chart"), {
     series: [{ name:"Grundwasser GOK", data }],
-    chart: { type:"line", height:"100%", zoom:{enabled:true}, pan:{enabled:true,mode:"x"}, toolbar:{show:false} },
+    chart: { type:"line", height:"100%", zoom:{enabled:true}, toolbar:{show:false} },
     stroke:{ width:2 },
     colors:["#1f77b4"],
     xaxis:{ type:"datetime" },
-    yaxis:{ min:paddedMinY, max:0, labels:{ formatter:v=>Math.abs(v).toFixed(1) }},
-    annotations:{ yaxis: buildAnnotations() },
-    dataLabels:{ enabled:false },
-    markers:{ size:0 }
+    yaxis:{ min:paddedMinY, max:0 },
+    annotations:{ yaxis: buildAnnotations() }
   });
 
   chart.render();
 }
 
 function buildAnnotations() {
-  const color = lastMeasuredValue >= thresholdY ? "red" : "green";
   return [{
     y: thresholdY,
-    borderColor: color,
-    label: {
-      text: "Alarmwert " + Math.abs(thresholdY).toFixed(2) + " m",
-      style: { background: color, color: "#fff" }
-    }
+    borderColor: alarmState === "ALARM" ? "red" : "green"
   }];
 }
 
 function refreshChart() {
   chart.updateOptions({ annotations:{ yaxis: buildAnnotations() } }, false, false);
 }
-
-/* Zoom */
-document.querySelectorAll(".toolbar button").forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll(".toolbar button").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-
-    let start = fullMinX;
-    const end = fullMaxX;
-    const r = btn.dataset.range;
-
-    if (r==="1w") start=end-7*864e5;
-    if (r==="1m") start=end-30*864e5;
-    if (r==="1y") start=end-365*864e5;
-    if (r==="ytd") start=new Date(new Date(end).getFullYear(),0,1).getTime();
-
-    chart.zoomX(start,end);
-  };
-});
 
 /* Mute */
 muteToggle.onchange = e => {
@@ -359,12 +364,6 @@ muteToggle.onchange = e => {
     alarmSound.currentTime = 0;
   }
 };
-</script>
-
-<script>
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js");
-}
 </script>
 
 </body>
