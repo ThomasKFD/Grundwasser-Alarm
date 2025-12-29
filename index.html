@@ -188,6 +188,16 @@ input[type=range].vertical {
 </audio>
 
 <script>
+function sendAlarmToServer() {
+  fetch("http://localhost:3000/alarm", {
+    method: "POST"
+  }).catch(err => {
+    console.warn("Server nicht erreichbar");
+  });
+}
+</script>
+  
+<script>
 let chart;
 let thresholdY = -1.20;
 let lastMeasuredValue = null;
@@ -224,7 +234,7 @@ function parseTxt(text) {
     const yVal = -parseFloat(p[2].replace(",", "."));
     if (!isNaN(x) && !isNaN(yVal)) data.push([x,yVal]);
   });
-
+  
   data.sort((a,b)=>a[0]-b[0]);
 
   fullMinX = data[0][0];
@@ -400,3 +410,4 @@ if ("serviceWorker" in navigator) {
 
 </body>
 </html>
+
