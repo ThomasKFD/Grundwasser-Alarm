@@ -102,6 +102,25 @@ input[type=range].vertical {
   background: transparent;
 }
 
+
+
+<button onclick="sendTestNotification()">
+  🔔 Test Push
+</button>
+
+<script>
+function sendTestNotification() {
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: "TEST_NOTIFICATION"
+    });
+  } else {
+    alert("Service Worker noch nicht aktiv.");
+  }
+}
+</script>
+
+  
 /* ===== Slider SCHIENE ===== */
 .slider-ok input::-moz-range-track {
   height: 8px;
@@ -443,6 +462,7 @@ window.addEventListener("load", () => {
 
 </body>
 </html>
+
 
 
 
