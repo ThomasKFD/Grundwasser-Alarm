@@ -11,10 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 
 <style>
-body {
-  font-family: Arial, sans-serif;
-  margin: 12px;
-}
+body { font-family: Arial, sans-serif; margin: 12px; }
 h2 { margin-bottom: 6px; }
 
 /* Upload */
@@ -76,14 +73,8 @@ h2 { margin-bottom: 6px; }
 }
 
 /* Layout */
-.layout {
-  display: flex;
-  width: 100%;
-}
-#chart {
-  flex: 1;
-  min-height: 360px;
-}
+.layout { display: flex; width: 100%; }
+#chart { flex: 1; min-height: 360px; }
 
 /* Slider */
 .slider-container {
@@ -92,7 +83,6 @@ h2 { margin-bottom: 6px; }
   display: flex;
   justify-content: center;
 }
-
 input[type=range].vertical {
   position: absolute;
   top: 50%;
@@ -188,22 +178,18 @@ input[type=range].vertical {
 </audio>
 
 <script>
+/* ===== Backend Push ===== */
 function sendAlarmToServer() {
-  fetch("http://localhost:3000/alarm", {
-    method: "POST"
-  }).catch(err => {
-    console.warn("Server nicht erreichbar");
-  });
+  fetch("http://localhost:3000/alarm", { method: "POST" })
+    .catch(() => console.warn("Alarm-Server nicht erreichbar"));
 }
-</script>
-  
-<script>
+
 let chart;
 let thresholdY = -1.20;
 let lastMeasuredValue = null;
 
-let alarmState = "OK"; // OK | ALARM
-let alarmSource = null; // MEASUREMENT | SLIDER
+let alarmState = "OK";       // OK | ALARM
+let alarmSource = null;      // MEASUREMENT | SLIDER
 
 let minY, maxY, paddedMinY;
 let fullMinX, fullMaxX;
@@ -234,7 +220,7 @@ function parseTxt(text) {
     const yVal = -parseFloat(p[2].replace(",", "."));
     if (!isNaN(x) && !isNaN(yVal)) data.push([x,yVal]);
   });
-  
+
   data.sort((a,b)=>a[0]-b[0]);
 
   fullMinX = data[0][0];
@@ -256,19 +242,15 @@ function setupSlider() {
   thresholdSlider.min = minY;
   thresholdSlider.max = 0;
   thresholdSlider.value = thresholdY;
-  updateSliderLabel();
+  sliderValue.textContent = Math.abs(thresholdY).toFixed(2);
 
   thresholdSlider.oninput = () => {
     thresholdY = parseFloat(thresholdSlider.value);
-    updateSliderLabel();
+    sliderValue.textContent = Math.abs(thresholdY).toFixed(2);
     refreshChart();
     updateSliderColor();
     checkAlarm(lastMeasuredValue, "SLIDER");
   };
-}
-
-function updateSliderLabel() {
-  sliderValue.textContent = Math.abs(thresholdY).toFixed(2);
 }
 
 function updateSliderColor() {
@@ -293,12 +275,12 @@ function checkAlarm(currentValue, source) {
       alarmSound.currentTime = 0;
       alarmSound.play().catch(()=>{});
     }
+
+    // 🔔 PUSH NUR EINMAL
+    sendAlarmToServer();
   }
 
-  if (
-    alarmState === "ALARM" &&
-    currentValue < (thresholdY - ALARM_HYSTERESIS)
-  ) {
+  if (alarmState === "ALARM" && currentValue < (thresholdY - ALARM_HYSTERESIS)) {
     alarmState = "OK";
     alarmSource = null;
     alarmSound.pause();
@@ -308,16 +290,11 @@ function checkAlarm(currentValue, source) {
 }
 
 function updateStatus() {
-  if (alarmState === "ALARM") {
-    alarmStatus.textContent =
-      alarmSource === "SLIDER"
-        ? "Status: ALARM (Simulation)"
-        : "Status: ALARM (Messwert)";
-    alarmStatus.className = "status alarm";
-  } else {
-    alarmStatus.textContent = "Status: OK";
-    alarmStatus.className = "status ok";
-  }
+  alarmStatus.textContent =
+    alarmState === "ALARM"
+      ? "Status: ALARM - Grenzwert unterschritten"
+      : "Status: OK";
+  alarmStatus.className = "status " + (alarmState === "ALARM" ? "alarm" : "ok");
 }
 
 /* Chart */
@@ -326,21 +303,11 @@ function renderChart(data) {
 
   chart = new ApexCharts(chartEl, {
     series: [{ name:"Grundwasser GOK", data }],
-    chart: {
-      type:"line",
-      height:"100%",
-      zoom:{ enabled:true },
-      pan:{ enabled:true, mode:"x" },
-      toolbar:{ show:false }
-    },
+    chart: { type:"line", height:"100%", zoom:{enabled:true}, pan:{enabled:true,mode:"x"}, toolbar:{show:false} },
     stroke:{ width:2 },
     colors:["#1f77b4"],
     xaxis:{ type:"datetime" },
-    yaxis:{
-      min:paddedMinY,
-      max:0,
-      labels:{ formatter:v=>Math.abs(v).toFixed(1) }
-    },
+    yaxis:{ min:paddedMinY, max:0, labels:{ formatter:v=>Math.abs(v).toFixed(1) }},
     annotations:{ yaxis: buildAnnotations() },
     dataLabels:{ enabled:false },
     markers:{ size:0 }
@@ -350,9 +317,7 @@ function renderChart(data) {
 }
 
 function buildAnnotations() {
-  const isAlarm = lastMeasuredValue >= thresholdY;
-  const color = isAlarm ? "red" : "green";
-
+  const color = lastMeasuredValue >= thresholdY ? "red" : "green";
   return [{
     y: thresholdY,
     borderColor: color,
@@ -364,16 +329,13 @@ function buildAnnotations() {
 }
 
 function refreshChart() {
-  chart.updateOptions({
-    annotations:{ yaxis: buildAnnotations() }
-  }, false, false);
+  chart.updateOptions({ annotations:{ yaxis: buildAnnotations() } }, false, false);
 }
 
 /* Zoom */
 document.querySelectorAll(".toolbar button").forEach(btn => {
   btn.onclick = () => {
-    document.querySelectorAll(".toolbar button")
-      .forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".toolbar button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
 
     let start = fullMinX;
@@ -383,10 +345,7 @@ document.querySelectorAll(".toolbar button").forEach(btn => {
     if (r==="1w") start=end-7*864e5;
     if (r==="1m") start=end-30*864e5;
     if (r==="1y") start=end-365*864e5;
-    if (r==="ytd") {
-      const d=new Date(end);
-      start=new Date(d.getFullYear(),0,1).getTime();
-    }
+    if (r==="ytd") start=new Date(new Date(end).getFullYear(),0,1).getTime();
 
     chart.zoomX(start,end);
   };
@@ -410,4 +369,3 @@ if ("serviceWorker" in navigator) {
 
 </body>
 </html>
-
