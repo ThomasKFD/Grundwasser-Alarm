@@ -40,3 +40,15 @@ self.addEventListener("fetch", event => {
     })
   );
 });
+
+self.addEventListener("message", event => {
+  if (event.data && event.data.type === "TEST_NOTIFICATION") {
+    self.registration.showNotification("Grundwasser Alarm", {
+      body: "Test: Benachrichtigungen funktionieren",
+      icon: "./icon-192.png",
+      badge: "./icon-192.png",
+      vibrate: [200, 100, 200],
+      tag: "gw-test"
+    });
+  }
+});
